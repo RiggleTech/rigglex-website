@@ -1,0 +1,147 @@
+name: Deploy RiggleX Landing Page
+
+on:
+  push:
+    branches: [main]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ─────────────────────────────────────
+  # JOB 1 — Build & Lint
+  # ─────────────────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-22.04
+    outputs:
+      build_status: ${{ steps.build.outcome }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+        continue-on-error: false
+
+      - name: Build
+        id: build
+        run: npm run build
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 1
+
+  # ─────────────────────────────────────
+  # JOB 2 — Deploy to S3 + Invalidate CloudFront
+  # ─────────────────────────────────────
+  deploy:
+    name: Deploy to S3
+    needs: build
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Sync dist/ to S3
+        run: |
+          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_NAME }}/ \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "index.html"
+
+          # index.html: no cache so users always get the latest
+          aws s3 cp dist/index.html s3://${{ secrets.S3_BUCKET_NAME }}/index.html \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --content-type "text/html"
+
+          echo "✅ S3 sync complete"
+
+      - name: Invalidate CloudFront Cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/*"
+          echo "✅ CloudFront invalidation triggered"
+
+  # ─────────────────────────────────────
+  # JOB 3 — Notify
+  # ─────────────────────────────────────
+  notify:
+    name: Notify
+    needs: [build, deploy]
+    if: always()
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Notify Success
+        if: needs.build.result == 'success' && needs.deploy.result == 'success'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          starttls: true
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "✅ RiggleX Landing Page Deployed Successfully"
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: "GitHub Actions <${{ secrets.EMAIL_USERNAME }}>"
+          body: |
+            ✅ Landing page deployed successfully!
+
+            Repo:    ${{ github.repository }}
+            Branch:  ${{ github.ref_name }}
+            Commit:  ${{ github.sha }}
+            Author:  ${{ github.actor }}
+            Time:    ${{ github.event.head_commit.timestamp }}
+
+            🌐 Live at: https://rigglex.in
+
+            Logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Notify Failure
+        if: needs.build.result == 'failure' || needs.deploy.result == 'failure'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          starttls: true
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "❌ RiggleX Landing Page Deploy FAILED"
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: "GitHub Actions <${{ secrets.EMAIL_USERNAME }}>"
+          body: |
+            ❌ Landing page deployment failed!
+
+            Repo:    ${{ github.repository }}
+            Branch:  ${{ github.ref_name }}
+            Commit:  ${{ github.sha }}
+            Author:  ${{ github.actor }}
+
+            ⚠️ Please check the logs immediately:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
