@@ -42,16 +42,16 @@ const Footer = () => (
           <div>
             <p className="text-sm md:text-base lg:text-lg font-normal text-slate-600 mb-3">Follow us on</p>
             <div className="flex items-center gap-3">
-              {socialLinks.map(({ label, Icon, href }) => (
+              {socialLinks.map((item) => (
                 <a
-                  key={label}
-                  href={href}
-                  aria-label={label}
+                  key={item.label}
+                  href={item.href}
+                  aria-label={item.label}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 text-slate-600 transition hover:border-orange-400 hover:text-orange-500 hover:bg-white"
                 >
-                  <Icon className="h-4 w-4" />
+                  <item.Icon className="h-4 w-4" />
                 </a>
               ))}
             </div>
@@ -79,18 +79,18 @@ const Footer = () => (
         <div className="space-y-4">
           <h4 className="text-base md:text-lg lg:text-xl font-semibold text-slate-900">Contact Us</h4>
           <ul className="space-y-4 text-sm">
-            {contactItems.map(({ label, href, Icon }) => (
-              <li key={label} className="flex items-start gap-3">
+            {contactItems.map((item) => (
+              <li key={item.label} className="flex items-start gap-3">
                 <span className="flex-shrink-0 flex h-5 w-5 items-center justify-center text-orange-500 mt-0.5">
-                  <Icon className="h-4 w-4" />
+                  <item.Icon className="h-4 w-4" />
                 </span>
                 <a
-                  href={href}
-                  target={href.startsWith('http') ? '_blank' : undefined}
-                  rel={href.startsWith('http') ? 'noopener noreferrer' : undefined}
+                  href={item.href}
+                  target={item.href.startsWith('http') ? '_blank' : undefined}
+                  rel={item.href.startsWith('http') ? 'noopener noreferrer' : undefined}
                   className="text-sm md:text-base font-normal text-slate-600 transition hover:text-orange-500 leading-snug"
                 >
-                  {label}
+                  {item.label}
                 </a>
               </li>
             ))}
